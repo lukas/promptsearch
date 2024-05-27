@@ -1,4 +1,4 @@
-# promptsweep
+# promptsearch
 
 Inspired by [Promptbreeder: Self-Referential Self-Improvement Via Prompt Evolution](https://arxiv.org/abs/2309.16797)
 
