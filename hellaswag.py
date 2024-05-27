@@ -5,9 +5,25 @@ import json
 import weave
 import re
 import asyncio
+import random
+import traceback
+from promptsearch import PromptModel
+from promptsearch import PromptSearch
 from weave import Dataset
+from weave import Object
 
 weave.init('hellaswag')
+
+dataset_name = "hellaswag-small"
+prompt_dataset_name = 'prompt_score_4'
+initial_prompt_template = """Here is a story and four possible endings - which do you think is most likely? You should end
+    your response with the exact string "the answer: " followed by A, B, C or D.
+    Story: {ctx}
+    Ending A: {ending0}
+    Ending B: {ending1}
+    Ending C: {ending2}
+    Ending D: {ending3}
+"""
 
 
 @weave.op()
@@ -47,7 +63,7 @@ def publish_dataset():
     weave.publish(dataset)
 
 
-class HSModel(weave.Model):
+class HSModel(PromptModel):
     model_name: str
     prompt_template: str
 
@@ -78,71 +94,17 @@ class HSModel(weave.Model):
         return {'pred': answer}
 
 
-# @weave.op()
-# def run_gpt(ctx, ending0, ending1, ending2, ending3, label):
-
-#     response = get_openai_response(prompt)
-
-#     correct = (answer == label)
-#     return parsed, correct, response
 @weave.op()
 def score(label: dict, model_output: dict) -> dict:
     return {'correct': label == model_output['pred']}
 
 
-# print(asyncio.run(evaluation.evaluate(model)))
+dataset = weave.ref(dataset_name).get()
 
-def run_gpt4_on_hellaswag(prompt_template):
-    dataset = weave.ref('hellaswag-100').get()
+model = HSModel(model_name='gpt-4o', prompt_template=initial_prompt_template)
 
-    model = HSModel(model_name='gpt-4o', prompt_template=prompt_template)
-    # print(dataset.rows)
-    # data = dataset.rows[0]
-    print(dataset.rows[0])
+evaluation = weave.Evaluation(
+    dataset=dataset, scorers=[score])
 
-    evaluation = weave.Evaluation(
-        dataset=dataset, scorers=[score])
-
-    # # Load the HellaSWAG dataset
-    # with open('hellaswag_test.jsonl', 'r') as file:
-    #     # load from a jsonl file
-    #     hellaswag_data = [json.loads(line) for line in file]
-    # for data in dataset_ref.rows:
-    #     ctx = data['ctx']
-    #     ending0 = data['ending0']
-    #     ending1 = data['ending1']
-    #     ending2 = data['ending2']
-    #     ending3 = data['ending3']
-    #     label = data['label']
-
-    #     print(asyncio.run(model.predict(ctx, ending0, ending1, ending2, ending3)))
-
-    # Save or process the results as needed
-    print(asyncio.run(evaluation.evaluate(model)))
-
-
-def mutate_template(prompt_template):
-    mutate_prompt_template = """Given the following prompt for an LLM, write me a better prompt. I'm going to replace {{ctx}} with the story and {{ending0}} with the first ending etc. Initial prompt = {prompt_template}"""
-    new_prompt_template = get_openai_response(
-        mutate_prompt_template.format(prompt_template=prompt_template))
-    print(new_prompt_template)
-    return new_prompt_template
-# publish_dataset()
-
-
-def prompt_search():
-    prompt_template = """Here is a story and four possible endings - which do you think is most likely? You should end
-        your response with the exact string "the answer: " followed by A, B, C or D.
-        Story: {ctx}
-        Ending A: {ending0}
-        Ending B: {ending1}
-        Ending C: {ending2}
-        Ending D: {ending3}
-        """
-
-    for i in range(10):
-        new_prompt_template = mutate_template(prompt_template)
-        run_gpt4_on_hellaswag(new_prompt_template)
-
-
-prompt_search()
+ps = PromptSearch(model=model, dataset=dataset, evaluation=evaluation)
+ps.steps(10)
