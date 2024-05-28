@@ -1,7 +1,7 @@
 import weave
 import pandas as pd
 import traceback
-from collections.abc import Callable
+from typing import Callable, Optional
 from pydantic import BaseModel
 import openai
 import random
@@ -11,18 +11,56 @@ from weave import Model
 from weave import Evaluation
 import asyncio
 
+mutation_prompts = [
+    """Given the following prompt template for an LLM, write me a better prompt.""",
+    """Rewrite the following prompt template but don't use any of the same words""",
+    """Change the instructions of the following prompt to make it more fun, think outside the box"""
+    """Embrace unconventional ideas and mutate the prompt in a way that surprises and inspires unique variations."""
+]
+
 
 class PromptModel(weave.Model):
     model_name: str
     prompt_template: str
 
 
+class PromptSearchParams(BaseModel):
+    use_best_prompt_freq: float = 0.5
+    use_random_prompt_freq: float = 0.2
+    use_learnings_freq: float = 0.5
+
+
+default_search_params = PromptSearchParams()
+
+
 class PromptSearch(BaseModel):
+    '''
+        Searches for better prompts.
+
+        Tries mutating the prompt by asking llm for a better prompt.
+        Tries looking at previous evaluation runs and asking the llm
+            for learnings and then tries to use those learnings to
+            improve the prompt.
+
+        Example:
+            dataset = weave.ref(dataset_name).get()
+
+            model = HSModel(model_name='gpt-4o', prompt_template=initial_prompt_template)
+
+            evaluation = weave.Evaluation(
+                dataset=dataset, scorers=[score])
+
+            ps = PromptSearch(model=model, dataset=dataset, evaluation=evaluation)
+            ps.steps(10)
+
+    '''
 
     model: PromptModel
     dataset: Dataset
     evaluation: Evaluation
+    eval_result_to_score: Optional[Callable[[dict], float]] = None
     prompt_search_name: str = ''
+    params: PromptSearchParams = default_search_params
 
     def _set_prompt_search_name(self):
         self.prompt_search_name = self.model.model_name + "-" + self.dataset.name
@@ -37,10 +75,38 @@ class PromptSearch(BaseModel):
     def _get_llm_response(self, prompt: str) -> str:
         return self._get_openai_response(prompt)
 
-    def mutate_template(self, prompt_template: str, learning_list: list):
-        mutate_prompt_template = """Given the following prompt template for an LLM, write me a better prompt. 
+    def _extract_new_prompt_from_response(self, response: str) -> str:
+        start_index = response.find(
+            "START PROMPT") + len("START PROMPT")
+        end_index = response.find("END PROMPT")
+        new_prompt_template = response[start_index:end_index].strip(
+        )
+        return new_prompt_template
 
-            I'm going to replace everything inside {{ and }} with values from a dataset
+    def mutate_template(self, prompt_template: str) -> str:
+        mutate_prompt_template = """{instruction}
+
+            Initial prompt: 
+            {prompt_template}
+            
+            Start the new prompt with START PROMPT and end the new prompt with END PROMPT. I'm going to
+            use an automated script to extract the prompt so those words need to match exactly. I'm going to 
+            replace everything inside the curly brackets with values from a dataset so don't use curly
+            brackets except as a template.       
+            """
+
+        selected_mutation = random.choice(mutation_prompts)
+
+        new_prompt_template_response = self._get_llm_response(
+            mutate_prompt_template.format(prompt_template=prompt_template, instruction=selected_mutation))
+
+        new_prompt_template = self._extract_new_prompt_from_response(
+            new_prompt_template_response)
+
+        return new_prompt_template
+
+    def mutate_template_with_learnings(self, prompt_template: str, learning_list: list) -> str:
+        mutate_prompt_template = """Given the following prompt template for an LLM, write me a better prompt. 
 
             Initial prompt: 
             {prompt_template}
@@ -48,7 +114,9 @@ class PromptSearch(BaseModel):
             {learning_list_str}
             
             Start the new prompt with START PROMPT and end the new prompt with END PROMPT. I'm going to
-            use an automated script to extract the prompt so those words need to match exactly.        
+            use an automated script to extract the prompt so those words need to match exactly. I'm going to 
+            replace everything inside the curly brackets with values from a dataset so don't use curly
+            brackets except as a template.        
             """
 
         if len(learning_list) > 0:
@@ -62,11 +130,8 @@ class PromptSearch(BaseModel):
             mutate_prompt_template.format(prompt_template=prompt_template, learning_list_str=learning_list_str))
         # print(new_prompt_template_response)
 
-        start_index = new_prompt_template_response.find(
-            "START PROMPT") + len("START PROMPT")
-        end_index = new_prompt_template_response.find("END PROMPT")
-        new_prompt_template = new_prompt_template_response[start_index:end_index].strip(
-        )
+        new_prompt_template = self._extract_new_prompt_from_response(
+            new_prompt_template_response)
 
         return new_prompt_template
 
@@ -128,22 +193,44 @@ class PromptSearch(BaseModel):
                                           best_prompt, best_score)
         return lr
 
-    def mutate_random_template(self, score_dataset_rows: list, learning_list: list):
+    def _get_last_prompt(self, score_dataset_rows: list):
+        score_dataset_df = pd.DataFrame(score_dataset_rows)
+        last_row = score_dataset_df.iloc[-1]
+        last_prompt = str(last_row['prompt_template'])
+        return last_prompt
+
+    def _get_random_prompt(self, score_dataset_rows: list):
         score_dataset_df = pd.DataFrame(score_dataset_rows)
         random_row = score_dataset_df.sample(n=1).iloc[0]
         random_prompt = str(random_row['prompt_template'])
-        return self.mutate_template(random_prompt, learning_list)
+        return random_prompt
 
-    def mutate_best_template(self, score_dataset_rows: list, learning_list: list):
+    def _get_best_prompt(self, score_dataset_rows: list):
         score_dataset_df = pd.DataFrame(score_dataset_rows)
         best_row = score_dataset_df.loc[score_dataset_df['prompt_score'].idxmax(
         )]
         best_prompt = str(best_row['prompt_template'])
+        return best_prompt
 
-        return self.mutate_template(best_prompt, learning_list)
+    def gen_next_template(self, score_dataset_rows: list):
+        r = random.random()
+        if r < self.params.use_best_prompt_freq:
+            start_prompt = self._get_best_prompt(score_dataset_rows)
+        elif r < self.params.use_best_prompt_freq + self.params.use_random_prompt_freq:
+            start_prompt = self._get_random_prompt(score_dataset_rows)
+        else:
+            start_prompt = self._get_last_prompt(score_dataset_rows)
 
-    def gen_next_template(self, score_dataset_rows: list, learning_list: list):
-        return self.mutate_best_template(score_dataset_rows, learning_list)
+        r2 = random.random()
+        if (r2 < self.params.use_learnings_freq and len(score_dataset_rows) > 3):
+            learning_list = self.get_learnings_from_dataset_rows(
+                score_dataset_rows)
+            new_template = self.mutate_template_with_learnings(
+                start_prompt, learning_list)
+        else:
+            new_template = self.mutate_template(start_prompt)
+
+        return new_template
 
         # return mutate_random_template(score_dataset_rows, learning_list)
 
@@ -174,7 +261,10 @@ class PromptSearch(BaseModel):
 
     def _eval_prompt_model_on_dataset(self):
         result = asyncio.run(self.evaluation.evaluate(self.model))
-        prompt_score = result['score']['correct']['true_fraction']
+        if (self.eval_result_to_score != None):
+            prompt_score = self.eval_result_to_score()
+        else:
+            prompt_score = result['score']['correct']['true_fraction']
         return prompt_score
 
     def get_learnings(self) -> list:
@@ -191,15 +281,10 @@ class PromptSearch(BaseModel):
         if (len(score_dataset_rows) == 0):
             new_prompt_template = self.model.prompt_template
         else:
-            if (len(score_dataset_rows) > 3):
-                learnings = self.get_learnings_from_dataset_rows(
-                    score_dataset_rows)
-            else:
-                learnings = []
-
             new_prompt_template = self.gen_next_template(
-                score_dataset_rows, learnings)
+                score_dataset_rows)
 
+        breakpoint()
         self.model.prompt_template = new_prompt_template
         prompt_score = self._eval_prompt_model_on_dataset()
 

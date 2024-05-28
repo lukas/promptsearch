@@ -99,6 +99,10 @@ def score(label: dict, model_output: dict) -> dict:
     return {'correct': label == model_output['pred']}
 
 
+def eval_prompt(result: dict):
+    return result['score']['correct']['true_fraction']
+
+
 dataset = weave.ref(dataset_name).get()
 
 model = HSModel(model_name='gpt-4o', prompt_template=initial_prompt_template)
