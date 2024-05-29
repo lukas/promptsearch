@@ -284,7 +284,6 @@ class PromptSearch(BaseModel):
             new_prompt_template = self.gen_next_template(
                 score_dataset_rows)
 
-        breakpoint()
         self.model.prompt_template = new_prompt_template
         prompt_score = self._eval_prompt_model_on_dataset()
 
