@@ -262,7 +262,7 @@ class PromptSearch(BaseModel):
     def _eval_prompt_model_on_dataset(self):
         result = asyncio.run(self.evaluation.evaluate(self.model))
         if (self.eval_result_to_score != None):
-            prompt_score = self.eval_result_to_score()
+            prompt_score = self.eval_result_to_score(result)
         else:
             prompt_score = result['score']['correct']['true_fraction']
         return prompt_score
