@@ -2,7 +2,7 @@ import weave
 from weave import Scorer, WeaveList
 from openai import OpenAI
 
-# call evaluation = Evaluation(dataset=datset, scorers=[LearningScorer(prompt=prompt)])
+# call evaluation = Evaluation(dataset=dataset, scorers=[LearningScorer(prompt=prompt)])
 
 
 @weave.op()
