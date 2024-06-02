@@ -59,6 +59,8 @@ class PromptSearch(BaseModel):
     dataset: Dataset
     evaluation: Evaluation
     eval_result_to_score: Optional[Callable[[dict], float]] = None
+    get_prompt_template: Optional[Callable[[None], str]] = None
+    set_prompt_template: Optional[Callable[[str], None]] = None
     prompt_search_name: str = ''
     params: PromptSearchParams = default_search_params
 
@@ -279,12 +281,19 @@ class PromptSearch(BaseModel):
         score_dataset_rows = self._get_dataset_rows(self.prompt_search_name)
 
         if (len(score_dataset_rows) == 0):
-            new_prompt_template = self.model.prompt_template
+            if (self.get_prompt_template != None):
+                new_prompt_template = self.get_prompt_template()
+            else:
+                new_prompt_template = self.model.prompt_template
         else:
             new_prompt_template = self.gen_next_template(
                 score_dataset_rows)
 
-        self.model.prompt_template = new_prompt_template
+        if (self.set_prompt_template != None):
+            self.set_prompt_template(new_prompt_template)
+        else:
+            self.model.prompt_template = new_prompt_template
+
         prompt_score = self._eval_prompt_model_on_dataset()
 
         score_dataset_rows.append(
