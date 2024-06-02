@@ -55,8 +55,7 @@ class PromptSearch(BaseModel):
 
     '''
 
-    model: PromptModel
-    dataset: Dataset
+    model: Model
     evaluation: Evaluation
     eval_result_to_score: Optional[Callable[[dict], float]] = None
     get_prompt_template: Optional[Callable[[None], str]] = None
@@ -65,7 +64,7 @@ class PromptSearch(BaseModel):
     params: PromptSearchParams = default_search_params
 
     def _set_prompt_search_name(self):
-        self.prompt_search_name = self.model.model_name + "-" + self.dataset.name
+        self.prompt_search_name = self.model.model_name + "-" + "promptsearch"
 
     def _get_openai_response(self, prompt: str) -> str:
         response = openai.chat.completions.create(
