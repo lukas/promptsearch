@@ -45,7 +45,7 @@ class PromptSearch(BaseModel):
         Example:
             dataset = weave.ref(dataset_name).get()
 
-            model = HSModel(model_name='gpt-4o', prompt_template=initial_prompt_template)
+            model = PromptModel(model_name='gpt-4o', prompt_template=initial_prompt_template)
 
             evaluation = weave.Evaluation(
                 dataset=dataset, scorers=[score])
