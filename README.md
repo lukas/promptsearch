@@ -4,6 +4,8 @@ Inspired by [Promptbreeder: Self-Referential Self-Improvement Via Prompt Evoluti
 
 Searches for better prompts given a model, dataset and evaluation.
 
+Need to set up weave notion of model, dataset and evaluation - see https://github.com/wandb/weave
+
 ```python
 ps = PromptSearch(model=model, dataset=dataset, evaluation=evaluation)
 ps.steps(10)
