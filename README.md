@@ -10,3 +10,8 @@ Need to set up weave notion of model, dataset and evaluation - see https://githu
 ps = PromptSearch(model=model, dataset=dataset, evaluation=evaluation)
 ps.steps(10)
 ```
+
+Try example on hellaswag dataset
+```bash
+PYTHONPATH=. python examples/hellaswag/hellaswag.py
+```
