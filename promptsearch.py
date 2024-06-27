@@ -251,7 +251,7 @@ class PromptSearch(BaseModel):
         except Exception as e:
             print(e)
             # print e stack trace
-            traceback.print_exc()
+            # traceback.print_exc()
 
         return score_dataset_rows
 
